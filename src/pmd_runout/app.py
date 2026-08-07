@@ -10,6 +10,8 @@ recording is allowed. Everything stored, exported and plotted is micrometres.
 import argparse
 import csv
 import datetime
+import math
+import random
 import sys
 import threading
 import tkinter as tk
@@ -138,8 +140,15 @@ class App:
         self.result = None
         self.busy = False
 
+        try:  # modern Win11-style ttk theme; plain ttk if unavailable
+            import sv_ttk
+
+            sv_ttk.set_theme("light")
+        except Exception:
+            pass
+
         root.title(PROGRAM)
-        root.geometry("1100x760")
+        root.geometry("1320x800")
         root.columnconfigure(0, weight=1)
         root.rowconfigure(1, weight=1)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -314,6 +323,10 @@ class App:
         ttk.Button(bot, text="Compute Runout", command=self.compute).grid(
             row=0, column=1, padx=8
         )
+        if self.daq.is_simulated:
+            ttk.Button(
+                bot, text="Fill demo reversal data", command=self.fill_demo
+            ).grid(row=0, column=2, padx=8)
 
         self._update_record_state()
 
@@ -336,6 +349,37 @@ class App:
             "Clear run", f"Delete all {len(self.runs[run])} points from Run {run}?"
         ):
             self.runs[run] = []
+            self._refresh_tree(run)
+
+    def fill_demo(self):
+        """Simulated mode only: fabricate a plausible reversal pair so the
+        full Export/Compute/Results flow can be exercised without hardware.
+        Known truth: spindle 3-lobe 0.15 um + 5th 0.05 um, part 2-lobe
+        0.40 um, different eccentricity each run, ~4 nm noise.
+        """
+        if self.runs[1] or self.runs[2]:
+            if not messagebox.askyesno(
+                "Overwrite", "Replace all recorded points with demo data?"
+            ):
+                return
+        rng = random.Random()
+        if self.sensitivity() is None:
+            self.sens_var.set("2.5")
+        for run, sign in ((1, 1.0), (2, -1.0)):
+            self.runs[run] = []
+            for angle in range(0, 360, 30):
+                th = math.radians(angle)
+                part = 0.40 * math.cos(2 * th) + 0.03 * math.cos(6 * th + 1.1)
+                spindle = 0.15 * math.cos(3 * th + 0.8) + 0.05 * math.sin(5 * th)
+                ecc = (5.0, 1.2, 0.3) if run == 1 else (4.2, 0.9, -1.5)
+                um = (
+                    ecc[0]
+                    + ecc[1] * math.cos(th + ecc[2])
+                    + part
+                    + sign * spindle
+                    + rng.gauss(0.0, 0.004)
+                )
+                self.runs[run].append((float(angle), um, abs(rng.gauss(0.004, 0.001))))
             self._refresh_tree(run)
 
     # --------------------------------------------------------------- recording

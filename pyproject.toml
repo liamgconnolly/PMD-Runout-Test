@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib>=3.11.1",
     "nidaqmx>=1.6.0",
     "numpy>=2.5.1",
+    "sv-ttk>=2.6.1",
 ]
 
 [project.scripts]
