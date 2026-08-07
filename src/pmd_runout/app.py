@@ -337,15 +337,28 @@ class App:
         self.record_btn.state(["disabled"])
         self.readout.config(text="Recording...", fg="black")
 
+        # tkinter is not thread-safe: the worker must not touch tk at all
+        # (even root.after crashes from another thread on Python 3.13+).
+        # It drops its result in a list; the main thread polls for it.
+        box = []
+
         def worker():
             try:
-                r = self.daq.read(BURST_S)
+                box.append((self.daq.read(BURST_S), None))
             except DAQError as exc:
-                self.root.after(0, lambda: self._recorded(run, angle, sens, None, exc))
-            else:
-                self.root.after(0, lambda: self._recorded(run, angle, sens, r, None))
+                box.append((None, exc))
+            except Exception as exc:  # never leave the UI stuck in "Recording..."
+                box.append((None, DAQError(f"Unexpected acquisition failure: {exc}")))
 
         threading.Thread(target=worker, daemon=True).start()
+        self._await_record(run, angle, sens, box)
+
+    def _await_record(self, run, angle, sens, box):
+        if not box:
+            self.root.after(50, lambda: self._await_record(run, angle, sens, box))
+            return
+        reading, exc = box[0]
+        self._recorded(run, angle, sens, reading, exc)
 
     def _recorded(self, run, angle, sens, reading, exc):
         self.busy = False
