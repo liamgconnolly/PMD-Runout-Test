@@ -19,7 +19,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from .daq import CapProbeDAQ, DAQError, SimulatedDAQ
+from .daq import CapProbeDAQ, DAQError, SimulatedDAQ, list_ai_channels
 from .reversal import ReversalError, reversal
 
 try:
@@ -36,72 +36,96 @@ POLL_S = 0.1  # live readout acquisition time
 BIG = ("TkDefaultFont", 16, "bold")
 HUGE = ("TkDefaultFont", 20, "bold")
 
-INSTRUCTIONS = """\
-SPINDLE RUNOUT BY DONALDSON REVERSAL
-
-Setup
-  1. Mount the test cylinder (master ball / precision cylinder) in the
-     spindle and snug it up. Note which mark on the part is at 0 deg.
-  2. Attach the printed vernier scale to the spindle so you can index the
-     spindle to repeatable angles by hand.
-  3. Position the capacitance probe against the cylinder at mid-height,
-     aimed at the spindle axis (probe axis through the axis of rotation).
-     Set the standoff so the readout sits near the middle of the +/-10 V
-     range, not near an end.
-  4. Enter the probe sensitivity in um/V from the cap-probe box datasheet
-     or its calibration sheet. There is no default: a guessed sensitivity
-     scales every result you report. Recording stays disabled until this
-     field holds a positive number.
-  5. Check the live readout. It should be steady. If the +/- std value is
-     much larger than usual, something is vibrating or drifting - find it
-     before you take data.
-
-Run 1 - forward
-  6. Select "Run 1 - forward".
-  7. Rotate the spindle by hand to the first vernier angle. Let go, let it
-     settle, keep your hands off the machine.
-  8. Press "Record at this angle". The app takes a 1 s burst and averages
-     it. The angle box advances by the step automatically.
-  9. Repeat all the way around the circle. Use the same angles you intend
-     to use in Run 2 - the reversal maths needs identical angle sets.
-
-Run 2 - reversed
- 10. Select "Run 2 - reversed".
- 11. Rotate the PART 180 deg relative to the spindle: unchuck it and
-     re-chuck it with its reference mark at the 180 deg position.
- 12. Move the PROBE 180 deg to the diametrically opposite side of the
-     part, at the same height.
- 13. Keep the SAME probe sign convention: surface moving toward the probe
-     must still read the same sign as it did in Run 1. Do NOT invert the
-     probe electronics, swap leads, or flip a polarity switch. If the sign
-     convention flips, the spindle and part results swap places.
- 14. Measure the SAME angles as Run 1, same procedure.
-
-Compute
- 15. Press "Export CSV" first if you want the raw readings archived - the
-     CSV contains only what was measured, never computed values.
- 16. Press "Compute Runout".
-
-What the reversal separates
-  A single probe reading is the sum of two unknowns: the shape of the part
-  (its out-of-roundness) and the error motion of the spindle. Reversing
-  both the part and the probe flips the sign of the spindle contribution
-  relative to the part contribution, so the two runs give two independent
-  equations: r1 = P + S and r2 = P - S. Hence P = (r1 + r2)/2 and
-  S = (r1 - r2)/2. The DC term and the once-per-revolution term are then
-  removed from both by least squares: a part mounted slightly off-centre
-  produces a large pure first harmonic that is centring error, not spindle
-  error motion and not part form (ASME B89.3.4). So you do not need to
-  centre the part perfectly - but you do need every reading to be trusted.
-
-Troubleshooting
-  - A point whose std is much larger than the others means vibration,
-    drift, or you touched something. Delete that row and re-take it.
-  - "Signal outside +/-10 V" means the probe is out of range or unplugged.
-    Re-set the standoff; the reading is rejected, not clipped.
-  - Compute refuses if the two runs do not have exactly the same angles.
-    That is deliberate - the app will not interpolate your data.
-"""
+# (style, text) pairs rendered with tags in the Instructions tab.
+# Styles: title, head, step, body, warn.
+INSTRUCTIONS = [
+    ("title", "Spindle Runout by Donaldson Reversal"),
+    ("head", "Before you start - software and DAQ connection"),
+    ("step", "1. The NI-DAQmx driver runtime must be installed (free from "
+             "ni.com). Without it the app reports 'Could not find an "
+             "installation of NI-DAQmx' and offers simulated mode, which is "
+             "for UI practice only - simulated data is never a measurement."),
+    ("step", "2. Connect the cDAQ-9174 chassis by USB and power it; the "
+             "NI-9224 module must be seated in a slot. Windows should chime "
+             "and the chassis appears in NI MAX as e.g. 'cDAQ1'."),
+    ("step", "3. Connect the cap-probe box analog output (+/-10 V) to the "
+             "NI-9224 input channel you intend to use."),
+    ("step", "4. Launch the app (run.bat). Pick your channel from the "
+             "drop-down (e.g. cDAQ1Mod1/ai0 - the list shows every AI "
+             "channel NI-DAQmx can see) and press Connect / Reconnect. The "
+             "live readout at top right shows the probe voltage."),
+    ("head", "Measurement setup"),
+    ("step", "5. Mount the test cylinder (precision cylinder / master ball) "
+             "in the spindle and snug it up. Note which mark on the part is "
+             "at 0 deg."),
+    ("step", "6. Attach the printed vernier scale to the spindle so you can "
+             "index the spindle to repeatable angles by hand."),
+    ("step", "7. Position the capacitance probe against the cylinder at "
+             "mid-height, aimed through the spindle axis. Set the standoff "
+             "so the readout sits near the middle of the +/-10 V range, not "
+             "near an end."),
+    ("step", "8. Enter the probe sensitivity in um/V from the cap-probe box "
+             "datasheet or its calibration sheet. There is no default: a "
+             "guessed sensitivity scales every result you report. Recording "
+             "stays disabled until this field holds a positive number."),
+    ("step", "9. Watch the live readout settle. If the +/- std value is much "
+             "larger than usual, something is vibrating or drifting - find "
+             "it before you take data."),
+    ("head", "Run 1 - forward"),
+    ("step", "10. Select 'Run 1 - forward'."),
+    ("step", "11. Rotate the spindle by hand to the first vernier angle. Let "
+             "go, let it settle, keep your hands off the machine."),
+    ("step", "12. Press 'Record at this angle'. The app takes a 1 s burst "
+             "and averages it. The angle box advances by the step "
+             "automatically."),
+    ("step", "13. Repeat all the way around the circle. Use the same angles "
+             "you intend to use in Run 2 - the reversal maths needs "
+             "identical angle sets."),
+    ("head", "Run 2 - reversed"),
+    ("step", "14. Select 'Run 2 - reversed'."),
+    ("step", "15. Rotate the PART 180 deg relative to the spindle: unchuck "
+             "it and re-chuck it with its reference mark at the 180 deg "
+             "position."),
+    ("step", "16. Move the PROBE 180 deg to the diametrically opposite side "
+             "of the part, at the same height."),
+    ("warn", "17. Keep the SAME probe sign convention: surface moving toward "
+             "the probe must still read the same sign as it did in Run 1. "
+             "Do NOT invert the probe electronics, swap leads, or flip a "
+             "polarity switch. If the sign convention flips, the spindle and "
+             "part results swap places."),
+    ("step", "18. Measure the SAME angles as Run 1, same procedure."),
+    ("head", "Compute"),
+    ("step", "19. Press 'Export CSV' first if you want the raw readings "
+             "archived - the CSV contains only what was measured, never "
+             "computed values."),
+    ("step", "20. Press 'Compute Runout'. Results appear on the Results tab."),
+    ("head", "What the reversal separates"),
+    ("body", "A single probe reading is the sum of two unknowns: the shape "
+             "of the part (its out-of-roundness) and the error motion of the "
+             "spindle. Reversing both the part and the probe flips the sign "
+             "of the spindle contribution relative to the part contribution, "
+             "so the two runs give two independent equations: r1 = P + S and "
+             "r2 = P - S. Hence P = (r1 + r2)/2 and S = (r1 - r2)/2. The DC "
+             "term and the once-per-revolution term are then removed from "
+             "both by least squares: a part mounted slightly off-centre "
+             "produces a large pure first harmonic that is centring error, "
+             "not spindle error motion and not part form (ASME B89.3.4). So "
+             "you do not need to centre the part perfectly - but you do need "
+             "every reading to be trusted."),
+    ("head", "Troubleshooting"),
+    ("body", "- A point whose std is much larger than the others means "
+             "vibration, drift, or you touched something. Delete that row "
+             "and re-take it.\n"
+             "- 'Signal outside +/-10 V' means the probe is out of range or "
+             "unplugged. Re-set the standoff; the reading is rejected, not "
+             "clipped.\n"
+             "- Compute refuses if the two runs do not have exactly the same "
+             "angles. That is deliberate - the app will not interpolate your "
+             "data.\n"
+             "- 'Could not find an installation of NI-DAQmx' at startup: "
+             "install the NI-DAQmx runtime, replug the cDAQ, restart the "
+             "app."),
+]
 
 
 class App:
@@ -146,9 +170,11 @@ class App:
 
         ttk.Label(top, text="Channel:").grid(row=0, column=0, sticky="w")
         self.channel_var = tk.StringVar(value=getattr(self.daq, "channel", "cDAQ1Mod1/ai0"))
-        ttk.Entry(top, textvariable=self.channel_var, width=18).grid(
-            row=0, column=1, padx=(4, 4)
-        )
+        self.channel_cb = ttk.Combobox(top, textvariable=self.channel_var, width=18)
+        self.channel_cb.grid(row=0, column=1, padx=(4, 4))
+        # enumerate live each time the list is opened; empty = no driver/device
+        self.channel_cb.configure(postcommand=self._refresh_channels)
+        self._refresh_channels()
         ttk.Button(top, text="Connect / Reconnect", command=self.reconnect).grid(
             row=0, column=2, padx=(0, 16)
         )
@@ -162,6 +188,10 @@ class App:
         self.readout.grid(row=0, column=6, sticky="e")
 
         self._refresh_banner()
+
+    def _refresh_channels(self):
+        chans = list_ai_channels()
+        self.channel_cb.configure(values=chans or ["(no NI-DAQmx devices found)"])
 
     def _refresh_banner(self):
         if self.daq.is_simulated:
@@ -238,7 +268,7 @@ class App:
         ttk.Label(ctl, text="Angle (deg):").grid(row=0, column=2)
         self.angle_var = tk.StringVar(value="0")
         ttk.Spinbox(
-            ctl, from_=-360, to=720, increment=1, textvariable=self.angle_var, width=8
+            ctl, from_=-360, to=720, increment=5, textvariable=self.angle_var, width=8
         ).grid(row=0, column=3, padx=4)
         ttk.Label(ctl, text="Step:").grid(row=0, column=4)
         self.step_var = tk.StringVar(value="30")
@@ -496,12 +526,29 @@ class App:
         self.nb.add(tab, text="Instructions")
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(0, weight=1)
-        txt = tk.Text(tab, wrap="word", font=("TkFixedFont", 10))
+        txt = tk.Text(
+            tab, wrap="word", font=("TkDefaultFont", 10), padx=16, pady=12,
+            spacing3=6, relief="flat",
+        )
         txt.grid(row=0, column=0, sticky="nsew")
         sb = ttk.Scrollbar(tab, orient="vertical", command=txt.yview)
         sb.grid(row=0, column=1, sticky="ns")
         txt.configure(yscrollcommand=sb.set)
-        txt.insert("1.0", INSTRUCTIONS)
+        txt.tag_configure("title", font=("TkDefaultFont", 16, "bold"), spacing3=10)
+        txt.tag_configure(
+            "head", font=("TkDefaultFont", 12, "bold"), spacing1=12, spacing3=6
+        )
+        txt.tag_configure("step", lmargin1=12, lmargin2=34)
+        txt.tag_configure("body", lmargin1=12, lmargin2=12)
+        txt.tag_configure(
+            "warn",
+            lmargin1=12,
+            lmargin2=34,
+            background="#fff3cd",
+            font=("TkDefaultFont", 10, "bold"),
+        )
+        for style, text in INSTRUCTIONS:
+            txt.insert("end", text + "\n", style)
         txt.configure(state="disabled")
 
     # ------------------------------------------------------------------ teardown

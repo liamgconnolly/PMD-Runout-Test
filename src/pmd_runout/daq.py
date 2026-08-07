@@ -45,6 +45,23 @@ def _validate(samples: list[float]) -> Reading:
     return Reading(mean_v=mean, std_v=std, n_samples=n)
 
 
+def list_ai_channels() -> list[str]:
+    """All AI physical channels NI-DAQmx can see (e.g. 'cDAQ1Mod1/ai0').
+    Empty list if the driver or hardware is absent — callers show that
+    honestly rather than inventing a default that looks connected.
+    """
+    try:
+        import nidaqmx.system
+
+        return [
+            ch.name
+            for dev in nidaqmx.system.System.local().devices
+            for ch in dev.ai_physical_chans
+        ]
+    except Exception:
+        return []
+
+
 class CapProbeDAQ:
     """One AI voltage channel, finite burst reads, mean +/- std in volts."""
 
