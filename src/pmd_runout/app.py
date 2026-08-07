@@ -193,8 +193,12 @@ class App:
         ttk.Entry(top, textvariable=self.sens_var, width=10).grid(row=0, column=4, padx=4)
         self.sens_var.trace_add("write", lambda *_: self._update_record_state())
 
-        self.readout = tk.Label(top, text="---", font=BIG, anchor="e")
-        self.readout.grid(row=0, column=6, sticky="e")
+        box = ttk.LabelFrame(top, text="Live probe  (± = 1σ of burst)", padding=(12, 4))
+        box.grid(row=0, column=6, sticky="e")
+        self.readout_main = tk.Label(box, text="---", font=HUGE, anchor="e")
+        self.readout_main.grid(row=0, column=0, sticky="e")
+        self.readout_sub = tk.Label(box, text="", anchor="e")
+        self.readout_sub.grid(row=1, column=0, sticky="e")
 
         self._refresh_banner()
 
@@ -242,14 +246,27 @@ class App:
         if not self.busy:
             try:
                 r = self.daq.read(POLL_S)
-                txt = f"{r.mean_v:+.4f} +/- {r.std_v:.4f} V"
                 s = self.sensitivity()
                 if s is not None:
-                    txt += f"   |   {r.mean_v * s:+.3f} +/- {r.std_v * s:.3f} um"
-                self.readout.config(text=txt, fg="black")
+                    self._set_readout(
+                        f"{r.mean_v * s:+.3f} ± {r.std_v * s:.3f} µm",
+                        f"{r.mean_v:+.4f} ± {r.std_v:.4f} V",
+                    )
+                else:
+                    self._set_readout(
+                        f"{r.mean_v:+.4f} ± {r.std_v:.4f} V",
+                        "enter sensitivity for µm",
+                    )
             except DAQError as exc:
-                self.readout.config(text=str(exc), fg="red")
+                msg = str(exc)
+                self._set_readout(
+                    "DAQ error", msg[:90] + ("…" if len(msg) > 90 else ""), "red"
+                )
         self.root.after(POLL_MS, self._poll)
+
+    def _set_readout(self, main, sub, color="black"):
+        self.readout_main.config(text=main, fg=color)
+        self.readout_sub.config(text=sub, fg=color)
 
     # ----------------------------------------------------------- measure tab
 
@@ -409,7 +426,7 @@ class App:
 
         self.busy = True
         self.record_btn.state(["disabled"])
-        self.readout.config(text="Recording...", fg="black")
+        self._set_readout("Recording…", f"1 s burst at {angle:g}°")
 
         # tkinter is not thread-safe: the worker must not touch tk at all
         # (even root.after crashes from another thread on Python 3.13+).
