@@ -1,0 +1,32 @@
+[project]
+name = "pmd-runout"
+version = "0.1.0"
+description = "Spindle runout measurement via cap probe + Donaldson reversal (replaces legacy LabVIEW)"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Liam G. Connolly", email = "liam.gl.connolly@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.11.1",
+    "nidaqmx>=1.6.0",
+    "numpy>=2.5.1",
+]
+
+[project.scripts]
+pmd-runout = "pmd_runout.app:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
