@@ -15,6 +15,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
@@ -330,7 +331,7 @@ class App:
                 f"Run {run} already has a point at {angle:g} deg. Replace it?",
             ):
                 return
-            self.runs[run] = [row for row in self.runs[run] if row[0] != angle]
+            # old point is removed in _recorded, only once the new burst succeeds
 
         self.busy = True
         self.record_btn.state(["disabled"])
@@ -353,6 +354,7 @@ class App:
             messagebox.showerror("DAQ error - nothing recorded", str(exc))
             return
         # volts -> micrometres using the user's calibration; std scales the same way
+        self.runs[run] = [row for row in self.runs[run] if row[0] != angle]
         self.runs[run].append((angle, reading.mean_v * sens, reading.std_v * sens))
         self._refresh_tree(run)
         try:
@@ -456,8 +458,6 @@ class App:
             text=f"{pre}Part out-of-roundness (P-V): {res.part_out_of_roundness:.3f} um "
             f"({res.part_out_of_roundness * 1000.0:.0f} nm)"
         )
-
-        import numpy as np
 
         th = np.deg2rad(np.append(res.angles_deg, res.angles_deg[0]))
         s = np.append(res.spindle, res.spindle[0])
